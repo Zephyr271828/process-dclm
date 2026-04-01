@@ -3,8 +3,7 @@ import tensorflow as tf
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from array_record.python.array_record_module import ArrayRecordReader
-
-TOKENIZER_NAME = "/n/fs/vision-mix/yx1168/model_ckpts/Llama-2-7b-hf/"
+from dclm_paths import TOKENIZER_NAME, TOKENIZE_OUT_DIR
 tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME, use_fast=True)
 
 bos_id = tokenizer.bos_token_id
@@ -17,7 +16,7 @@ def parse_ids(serialized: bytes):
     ex.ParseFromString(serialized)
     return ex.features.feature["input_ids"].int64_list.value
 
-all_paths = glob.glob("/n/fs/vision-mix/yx1168/pruning/datasets/dclm/llama2-bucket-pieces/*/*")
+all_paths = glob.glob(str(TOKENIZE_OUT_DIR / "*" / "*"))
 
 BATCH = 256  # adjust for speed/memory
 

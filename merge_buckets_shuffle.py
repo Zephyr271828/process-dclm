@@ -8,6 +8,7 @@ from array_record.python.array_record_module import (
     ArrayRecordReader,
     ArrayRecordWriter,
 )
+from dclm_paths import ARRAY_RECORD_GROUP_SIZE, SHUFFLED_DIR, TOKENIZE_OUT_DIR
 
 # ----------------------------
 # Args
@@ -32,22 +33,20 @@ args = parser.parse_args()
 # ----------------------------
 # Paths
 # ----------------------------
-IN_DIR = "/n/fs/vision-mix/yx1168/pruning/datasets/dclm/llama2-bucket-pieces"
-OUT_DIR = "/n/fs/vision-mix/yx1168/pruning/datasets/dclm/llama2-array-record-w-special-tokens-shuffled"
+IN_DIR = TOKENIZE_OUT_DIR
+OUT_DIR = SHUFFLED_DIR
 
-os.makedirs(OUT_DIR, exist_ok=True)
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUT_PATH = os.path.join(
-    OUT_DIR, f"bucket_{args.i:04d}.array_record"
-)
+OUT_PATH = OUT_DIR / f"bucket_{args.i:04d}.array_record"
 
 # Remove stale output if exists
-if os.path.exists(OUT_PATH):
-    os.remove(OUT_PATH)
+if OUT_PATH.exists():
+    OUT_PATH.unlink()
 
 # Find all bucket shards
 input_paths = sorted(
-    glob.glob(os.path.join(IN_DIR, "*", f"bucket_{args.i:04d}.array_record"))
+    glob.glob(str(IN_DIR / "*" / f"bucket_{args.i:04d}.array_record"))
 )
 
 print(f"🔀 Merging bucket {args.i}")
@@ -91,7 +90,7 @@ random.shuffle(records)
 # ----------------------------
 # Write merged bucket
 # ----------------------------
-writer = ArrayRecordWriter(OUT_PATH)
+writer = ArrayRecordWriter(str(OUT_PATH), ARRAY_RECORD_GROUP_SIZE)
 for rec in records:
     writer.write(rec)
 writer.close()

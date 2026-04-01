@@ -3,6 +3,7 @@ import argparse
 import tensorflow as tf
 from tqdm import tqdm
 from array_record.python.array_record_module import ArrayRecordReader
+from dclm_paths import SHUFFLED_DIR
 
 # ----------------------------
 # Args
@@ -17,7 +18,7 @@ parser = argparse.ArgumentParser(
 #     help="Glob pattern for ArrayRecord files",
 # )
 args = parser.parse_args()
-args.glob = "/n/fs/vision-mix/yx1168/pruning/datasets/dclm/llama2-array-record-w-special-tokens-shuffled/*"
+args.glob = str(SHUFFLED_DIR / "*")
 
 # ----------------------------
 # Helpers

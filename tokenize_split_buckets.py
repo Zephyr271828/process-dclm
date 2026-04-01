@@ -5,12 +5,27 @@ import argparse
 import shutil
 import subprocess
 import hashlib
+from pathlib import Path
 import zstandard as zstd
 from tqdm import tqdm
 
 import tensorflow as tf
 from transformers import AutoTokenizer
 from array_record.python.array_record_module import ArrayRecordWriter
+from dclm_paths import (
+    ARRAY_RECORD_GROUP_SIZE,
+    DATASET_ROOT,
+    INDEX_PATH,
+    TOKENIZER_NAME,
+    TOKENIZE_OUT_DIR,
+)
+
+
+def huggingface_cli():
+    hf_bin = Path(sys.executable).with_name("hf")
+    if hf_bin.exists():
+        return str(hf_bin)
+    return "hf"
 
 # ----------------------------
 # Args
@@ -28,23 +43,19 @@ K = 32
 SEQ_LEN = 4096
 NUM_BUCKETS = 128
 
-TOKENIZER_NAME = "/n/fs/vision-mix/yx1168/model_ckpts/Llama-2-7b-hf/"
-ROOT_DIR = "/n/fs/vision-mix/yx1168/pruning/datasets/dclm/dclm_subset"
-INDEX_PATH = "/n/fs/vision-mix/yx1168/pruning/datasets/dclm/scripts/index.json"
-
-OUT_DIR = "/n/fs/vision-mix/yx1168/pruning/datasets/dclm/llama2-bucket-pieces"
-BUCKET_DIR = os.path.join(OUT_DIR, f"array_record_{args.i:04d}")
+OUT_DIR = TOKENIZE_OUT_DIR
+BUCKET_DIR = OUT_DIR / f"array_record_{args.i:04d}"
 
 shutil.rmtree(BUCKET_DIR, ignore_errors=True)
 
 JSON_KEY = "text"
 
-os.makedirs(BUCKET_DIR, exist_ok=True)
+BUCKET_DIR.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------
 # Load index
 # ----------------------------
-with open(INDEX_PATH, "r") as f:
+with INDEX_PATH.open("r") as f:
     indices = json.load(f)
 
 paths = indices[str(args.i)]
@@ -69,6 +80,27 @@ print(f"BOS={bos_id}, EOS={eos_id}")
 # ----------------------------
 # Helpers
 # ----------------------------
+def resolve_local_path(path):
+    candidate = Path(path)
+    if candidate.exists():
+        return candidate
+
+    marker = "global-shard_"
+    marker_pos = path.find(marker)
+    if marker_pos >= 0:
+        return DATASET_ROOT / path[marker_pos:]
+
+    return candidate
+
+
+def relative_dataset_path(path):
+    marker = "global-shard_"
+    marker_pos = path.find(marker)
+    if marker_pos >= 0:
+        return path[marker_pos:]
+    return path
+
+
 def iter_jsonl_zst(path):
     with open(path, "rb") as fh:
         dctx = zstd.ZstdDecompressor()
@@ -117,7 +149,10 @@ def write_example(writer, token_ids):
 # Open bucket writers
 # ----------------------------
 writers = {
-    b: ArrayRecordWriter(os.path.join(BUCKET_DIR, f"bucket_{b:04d}.array_record"))
+    b: ArrayRecordWriter(
+        os.path.join(BUCKET_DIR, f"bucket_{b:04d}.array_record"),
+        ARRAY_RECORD_GROUP_SIZE,
+    )
     for b in range(NUM_BUCKETS)
 }
 
@@ -127,21 +162,27 @@ writers = {
 buffer = []
 total_written = 0
 
-for path in paths:
+for raw_path in paths:
+    path = resolve_local_path(raw_path)
     print(f"\nProcessing {path}")
 
-    if not os.path.exists(path) or os.path.getsize(path) < 64 * 1024:
-        local_path = path[path.find("global"):]
-        cmd = (
-            "huggingface-cli download mlfoundations/dclm-baseline-1.0 "
-            "--repo-type dataset "
-            f"--include '{local_path}' "
-            "--local-dir dclm_subset "
-            "--local-dir-use-symlinks False"
-        )
-        subprocess.run(cmd, shell=True, check=True)
+    if not path.exists() or path.stat().st_size < 64 * 1024:
+        local_path = relative_dataset_path(raw_path)
+        cmd = [
+            huggingface_cli(),
+            "download",
+            "mlfoundations/dclm-baseline-1.0",
+            "--repo-type",
+            "dataset",
+            "--include",
+            local_path,
+            "--local-dir",
+            str(DATASET_ROOT),
+        ]
+        subprocess.run(cmd, check=True)
+        path = resolve_local_path(raw_path)
 
-    for obj in tqdm(iter_jsonl_zst(path)):
+    for obj in tqdm(iter_jsonl_zst(path), total=None):
         text = obj.get(JSON_KEY, "")
         if not text:
             continue

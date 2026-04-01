@@ -4,9 +4,10 @@ import argparse
 import hashlib
 import tensorflow as tf
 from array_record.python.array_record_module import ArrayRecordReader, ArrayRecordWriter
+from dclm_paths import ARRAY_RECORD_GROUP_SIZE, MERGED_TOKEN_DIR, TOKENIZE_OUT_DIR
 
 NUM_BUCKETS = 128
-OUT_DIR = "/n/fs/vision-mix/yx1168/pruning/datasets/dclm/llama2-bucket-pieces"
+OUT_DIR = TOKENIZE_OUT_DIR
 
 # ----------------------------
 # Args
@@ -15,7 +16,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--i", type=int, required=True, help="Merged array_record file")
 args = parser.parse_args()
 
-os.makedirs(OUT_DIR, exist_ok=True)
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------
 # Helpers
@@ -37,18 +38,19 @@ def hash_example(ex):
 # Writers
 # ----------------------------
 writers = {}
-bucket_dir = os.path.join(OUT_DIR, f"array_record_{args.i:04d}")
-os.makedirs(bucket_dir, exist_ok=True)
+bucket_dir = OUT_DIR / f"array_record_{args.i:04d}"
+bucket_dir.mkdir(parents=True, exist_ok=True)
 for b in range(NUM_BUCKETS):
     writers[b] = ArrayRecordWriter(
-        os.path.join(bucket_dir, f"bucket_{b:04d}.array_record")
+        str(bucket_dir / f"bucket_{b:04d}.array_record"),
+        ARRAY_RECORD_GROUP_SIZE,
     )
 
 # ----------------------------
 # Main loop
 # ----------------------------
-input_path = f"/n/fs/vision-mix/yx1168/pruning/datasets/dclm/llama2-array-record-w-special-tokens/dclm.merged.{args.i:04d}.array_record"
-reader = ArrayRecordReader(input_path)
+input_path = MERGED_TOKEN_DIR / f"dclm.merged.{args.i:04d}.array_record"
+reader = ArrayRecordReader(str(input_path))
 
 count = 0
 # for record in reader:
